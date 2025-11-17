@@ -1,0 +1,162 @@
+---
+- name: Install Nagios Core on Nagios Server
+  hosts: nagios_server # This targets ONLY the server in your [nagios_server] group
+  become: yes # All tasks run with sudo
+  vars:
+    nagios_version: "4.4.12"
+    plugins_version: "2.3.3"
+
+  tasks:
+    - name: Update the package list
+      apt:
+        update_cache: yes
+
+    - name: Install Nagios dependencies
+      apt:
+        name:
+          - apache2
+          - php
+          - libapache2-mod-php
+          - build-essential
+          - libgd-dev
+          - unzip
+          - wget
+          - autoconf
+          - gcc
+          - libc6
+          - make
+          - libssl-dev
+          - bc
+          - gawk
+          - dc
+          - snmp
+          - libnet-snmp-perl
+          - gettext
+          - libpq5
+          - python3-pip
+        state: present
+
+    - name: Create Nagios user and group
+      user:
+        name: nagios
+        state: present
+
+    - name: Create Nagios command group
+      group:
+        name: nagcmd
+        state: present
+
+    - name: Add nagios user to the command group
+      user:
+        name: nagios
+        groups: nagcmd
+        append: yes
+
+    - name: Add www-data (Apache) user to the command group
+      user:
+        name: www-data
+        groups: nagcmd
+        append: yes
+
+    - name: Download Nagios Core
+      get_url:
+        url: "https://assets.nagios.com/downloads/nagioscore/releases/nagios-{{ nagios_version }}.tar.gz"
+        dest: "/tmp/nagios-{{ nagios_version }}.tar.gz"
+
+    - name: Download Nagios Plugins
+      get_url:
+        url: "https://nagios-plugins.org/download/nagios-plugins-{{ plugins_version }}.tar.gz"
+        dest: "/tmp/nagios-plugins-{{ plugins_version }}.tar.gz"
+
+    - name: Unarchive Nagios Core
+      unarchive:
+        src: "/tmp/nagios-{{ nagios_version }}.tar.gz"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Unarchive Nagios Plugins
+      unarchive:
+        src: "/tmp/nagios-plugins-{{ plugins_version }}.tar.gz"
+        dest: /tmp
+        remote_src: yes
+
+    - name: Configure Nagios Core
+      command: ./configure --with-nagios-user=nagios --with-nagios-group=nagios --with-command-group=nagcmd
+      args:
+        chdir: "/tmp/nagios-{{ nagios_version }}"
+        creates: /usr/local/nagios/bin/nagios # Don't run if already configured
+
+    - name: Run 'make all' for Nagios Core
+      make:
+        chdir: "/tmp/nagios-{{ nagios_version }}"
+        target: all
+
+    # ADD THESE FOUR TASKS IN ITS PLACE
+    - name: Run 'make install' (core, cmd, init, config)
+      make:
+        chdir: "/tmp/nagios-{{ nagios_version }}"
+        target: "{{ item }}"
+      loop:
+        - install
+        - install-commandmode
+        - install-init
+        - install-config
+
+    - name: Remove existing Apache symlink (to prevent 'File exists' error)
+      file:
+        path: /etc/apache2/sites-enabled/nagios.conf
+        state: absent
+
+    - name: Run 'make install-webconf'
+      make:
+        chdir: "/tmp/nagios-{{ nagios_version }}"
+        target: install-webconf
+
+    - name: Install passlib (dependency for htpasswd module)
+      pip:
+        name: passlib
+        executable: pip3
+
+    - name: Install passlib (dependency for htpasswd module)
+      pip:
+        name: passlib
+        executable: pip3
+
+    - name: Set Nagios web interface password (nagiosadmin:nagiosadmin)
+      community.general.htpasswd:
+        path: /usr/local/nagios/etc/htpasswd.users
+        name: nagiosadmin
+        password: nagiosadmin # You can change this
+        create: yes
+        owner: nagios
+        group: nagcmd
+
+    - name: Configure Nagios Plugins
+      command: ./configure --with-nagios-user=nagios --with-nagios-group=nagios
+      args:
+        chdir: "/tmp/nagios-plugins-{{ plugins_version }}"
+        creates: /usr/local/nagios/libexec/check_ping # Don't run if already configured
+
+    - name: Run 'make' for Plugins
+      make:
+        chdir: "/tmp/nagios-plugins-{{ plugins_version }}"
+
+    - name: Run 'make install' for Plugins
+      make:
+        chdir: "/tmp/nagios-plugins-{{ plugins_version }}"
+        target: install
+
+    - name: Enable Apache modules
+      command: a2enmod cgi
+
+    - name: Start and enable Apache
+      service:
+        name: apache2
+        state: started
+        enabled: yes
+
+    - name: Start and enable Nagios
+      service:
+        name: nagios
+        state: started
+        enabled: yes

@@ -1,0 +1,8 @@
+---
+- name: Test Ansible Connection to All Hosts
+  hosts: all
+  become: no # We don't need sudo for a simple ping
+
+  tasks:
+    - name: Ping the host
+      ping:
