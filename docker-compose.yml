@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  web:
+    # Build the image from the Dockerfile in the current directory
+    build: .
+    ports:
+      # Map the host's port 8000 to the container's port 8000
+      - "8000:8000"
+    volumes:
+      # Mount the model directory to ensure the app
+      # can find the .pkl file after 'train_model.py' runs
+      - ./model:/app/model
+    command: uvicorn app.app:app --host 0.0.0.0 --port 8000
